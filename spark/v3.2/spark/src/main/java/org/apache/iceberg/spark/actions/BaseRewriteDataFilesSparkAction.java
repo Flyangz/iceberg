@@ -35,6 +35,7 @@ import java.util.stream.Stream;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.SortOrder;
+import org.apache.iceberg.SpaceFillingCurve;
 import org.apache.iceberg.StructLike;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.actions.BaseRewriteDataFilesFileGroupInfo;
@@ -104,10 +105,6 @@ abstract class BaseRewriteDataFilesSparkAction
    */
   protected abstract BinPackStrategy binPackStrategy();
 
-  /**
-   * The framework specific {@link SortStrategy}
-   */
-  protected abstract SortStrategy sortStrategy();
 
   @Override
   public RewriteDataFiles binPack() {
@@ -121,7 +118,7 @@ abstract class BaseRewriteDataFilesSparkAction
   public RewriteDataFiles sort(SortOrder sortOrder) {
     Preconditions.checkArgument(this.strategy == null,
         "Cannot set strategy to sort, it has already been set to %s", this.strategy);
-    this.strategy = sortStrategy().sortOrder(sortOrder);
+    this.strategy = SortStrategyFactory.getBaseSortStrategy(table(),spark()).sortOrder(sortOrder);
     return this;
   }
 
@@ -129,7 +126,15 @@ abstract class BaseRewriteDataFilesSparkAction
   public RewriteDataFiles sort() {
     Preconditions.checkArgument(this.strategy == null,
         "Cannot set strategy to sort, it has already been set to %s", this.strategy);
-    this.strategy = sortStrategy();
+    this.strategy = SortStrategyFactory.getBaseSortStrategy(table(), spark());
+    return this;
+  }
+
+  @Override
+  public RewriteDataFiles sort(SpaceFillingCurve spaceCurve) {
+    Preconditions.checkArgument(this.strategy == null,
+        "Cannot set strategy to sort, it has already been set to %s", this.strategy);
+    this.strategy = SortStrategyFactory.getSpaceCurveSortStrategy(table(), spark(), spaceCurve);
     return this;
   }
 

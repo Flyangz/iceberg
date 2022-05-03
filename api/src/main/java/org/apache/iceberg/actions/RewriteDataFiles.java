@@ -21,6 +21,7 @@ package org.apache.iceberg.actions;
 
 import java.util.List;
 import org.apache.iceberg.SortOrder;
+import org.apache.iceberg.SpaceFillingCurve;
 import org.apache.iceberg.StructLike;
 import org.apache.iceberg.expressions.Expression;
 
@@ -99,6 +100,15 @@ public interface RewriteDataFiles extends SnapshotUpdate<RewriteDataFiles, Rewri
    * @return this for method chaining
    */
   default RewriteDataFiles sort(SortOrder sortOrder) {
+    throw new UnsupportedOperationException("SORT Rewrite Strategy not implemented for this framework");
+  }
+
+  /**
+   * Choose SORT as a strategy for this rewrite operation and manually specify the multipleSpaceOrder to use
+   * @param spaceCurve user defined spaceCurve
+   * @return this for method chaining
+   */
+  default RewriteDataFiles sort(SpaceFillingCurve spaceCurve) {
     throw new UnsupportedOperationException("SORT Rewrite Strategy not implemented for this framework");
   }
 

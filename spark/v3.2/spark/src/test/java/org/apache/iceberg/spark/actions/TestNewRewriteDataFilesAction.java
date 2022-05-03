@@ -39,6 +39,7 @@ import org.apache.iceberg.SortOrder;
 import org.apache.iceberg.StructLike;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
+import org.apache.iceberg.ZOrderCurve;
 import org.apache.iceberg.actions.ActionsProvider;
 import org.apache.iceberg.actions.BinPackStrategy;
 import org.apache.iceberg.actions.RewriteDataFiles;
@@ -716,6 +717,62 @@ public class TestNewRewriteDataFilesAction extends SparkTestBase {
   }
 
   @Test
+  public void testZOrderSortingWithOnePartition() {
+    Table table = createTable(20);
+    List<Object[]> originalData = currentData();
+
+    RewriteDataFiles.Result result =
+        basicRewrite(table)
+            .sort(ZOrderCurve.builderFor(table.schema())
+                .addFields(ImmutableList.of("c1", "c2"))
+                .setStrategy(ZOrderCurve.Strategy.SAMPLE).build())
+            .option(SortStrategy.REWRITE_ALL, "true")
+            .option(RewriteDataFiles.TARGET_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table)))
+            .execute();
+
+    Assert.assertEquals("Should have 1 fileGroups", result.rewriteResults().size(), 1);
+
+    table.refresh();
+
+    List<Object[]> postRewriteData = currentData();
+    assertEquals("We shouldn't have changed the data", originalData, postRewriteData);
+
+    shouldHaveSnapshots(table, 2);
+    shouldHaveACleanCache(table);
+    shouldHaveMultipleFiles(table);
+    shouldHaveLastCommitSorted(table, "c1");
+  }
+
+  @Test
+  public void testZOrderSortingWithMultiplePartition() {
+    Table table = createTable(10);
+    String avgFileSize = Integer.toString(averageFileSize(table));
+    table.updateProperties().set(TableProperties.SPLIT_SIZE, avgFileSize).commit();
+
+    List<Object[]> originalData = currentData();
+
+    RewriteDataFiles.Result result =
+        basicRewrite(table)
+            .sort(ZOrderCurve.builderFor(table.schema())
+                .addFields(ImmutableList.of("c1", "c2"))
+                .setStrategy(ZOrderCurve.Strategy.SAMPLE).build())
+            .option(SortStrategy.REWRITE_ALL, "true")
+            .option(RewriteDataFiles.TARGET_FILE_SIZE_BYTES, Integer.toString(averageFileSize(table)))
+            .execute();
+
+    Assert.assertEquals("Should have 1 fileGroups", result.rewriteResults().size(), 1);
+
+    table.refresh();
+
+    List<Object[]> postRewriteData = currentData();
+    assertEquals("We shouldn't have changed the data", originalData, postRewriteData);
+
+    shouldHaveSnapshots(table, 2);
+    shouldHaveACleanCache(table);
+    shouldHaveMultipleFiles(table);
+  }
+
+  @Test
   public void testSortCustomSortOrderRequiresRepartition() {
     Table table = createTable(20);
     shouldHaveLastCommitUnsorted(table, "c3");
@@ -932,7 +989,7 @@ public class TestNewRewriteDataFilesAction extends SparkTestBase {
     table.updateProperties().set(TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES, "1024").commit();
     Assert.assertNull("Table must be empty", table.currentSnapshot());
 
-    writeRecords(files, 40000);
+    writeRecords(files, 1000);
 
     return table;
   }

@@ -37,11 +37,6 @@ public class BaseRewriteDataFilesSpark3Action extends BaseRewriteDataFilesSparkA
   }
 
   @Override
-  protected SortStrategy sortStrategy() {
-    return new Spark3SortStrategy(table(), spark());
-  }
-
-  @Override
   protected RewriteDataFiles self() {
     return this;
   }

@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.SortOrder;
+import org.apache.iceberg.SpaceFillingCurve;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
 import org.apache.iceberg.util.BinPacking;
@@ -62,6 +63,7 @@ public abstract class SortStrategy extends BinPackStrategy {
 
   private boolean rewriteAll;
   private SortOrder sortOrder;
+  private SpaceFillingCurve spaceFillingCurve;
 
   /**
    * Sets the sort order to be used in this strategy when rewriting files
@@ -73,8 +75,17 @@ public abstract class SortStrategy extends BinPackStrategy {
     return this;
   }
 
+  public SortStrategy sortSpaceCurve(SpaceFillingCurve spaceFillingCurve) {
+    this.spaceFillingCurve = spaceFillingCurve;
+    return this;
+  }
+
   protected SortOrder sortOrder() {
     return sortOrder;
+  }
+
+  protected SpaceFillingCurve spaceFillingCurve() {
+    return spaceFillingCurve;
   }
 
   @Override
@@ -127,6 +138,7 @@ public abstract class SortStrategy extends BinPackStrategy {
   }
 
   protected void validateOptions() {
+    if (spaceFillingCurve() != null)  return;
     Preconditions.checkArgument(!sortOrder.isUnsorted(),
         "Can't use %s when there is no sort order, either define table %s's sort order or set sort" +
             "order in the action",

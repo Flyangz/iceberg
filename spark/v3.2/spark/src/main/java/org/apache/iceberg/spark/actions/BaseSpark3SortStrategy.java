@@ -33,22 +33,19 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
 import org.apache.iceberg.spark.FileRewriteCoordinator;
 import org.apache.iceberg.spark.FileScanTaskSetManager;
-import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.SparkReadOptions;
 import org.apache.iceberg.spark.SparkWriteOptions;
 import org.apache.iceberg.util.PropertyUtil;
-import org.apache.iceberg.util.SortOrderUtil;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan;
 import org.apache.spark.sql.catalyst.utils.DistributionAndOrderingUtils$;
 import org.apache.spark.sql.connector.iceberg.distributions.Distribution;
-import org.apache.spark.sql.connector.iceberg.distributions.Distributions;
 import org.apache.spark.sql.connector.iceberg.expressions.SortOrder;
 import org.apache.spark.sql.internal.SQLConf;
 
-public class Spark3SortStrategy extends SortStrategy {
+public abstract class BaseSpark3SortStrategy extends SortStrategy {
 
   /**
    * The number of shuffle partitions and consequently the number of output files
@@ -69,7 +66,7 @@ public class Spark3SortStrategy extends SortStrategy {
 
   private double sizeEstimateMultiple;
 
-  public Spark3SortStrategy(Table table, SparkSession spark) {
+  protected BaseSpark3SortStrategy(Table table, SparkSession spark) {
     this.table = table;
     this.spark = spark;
   }
@@ -102,17 +99,8 @@ public class Spark3SortStrategy extends SortStrategy {
   @Override
   public Set<DataFile> rewriteFiles(List<FileScanTask> filesToRewrite) {
     String groupID = UUID.randomUUID().toString();
-    boolean requiresRepartition = !filesToRewrite.get(0).spec().equals(table.spec());
-
-    SortOrder[] ordering;
-    if (requiresRepartition) {
-      // Build in the requirement for Partition Sorting into our sort order
-      ordering = Spark3Util.convert(SortOrderUtil.buildSortOrder(table.schema(), table.spec(), sortOrder()));
-    } else {
-      ordering = Spark3Util.convert(sortOrder());
-    }
-
-    Distribution distribution = Distributions.ordered(ordering);
+    SortOrder[] localSorting = localSortOrder(filesToRewrite, table);
+    Distribution distribution = distribution(localSorting);
 
     try {
       manager.stageTasks(table, groupID, filesToRewrite);
@@ -129,12 +117,16 @@ public class Spark3SortStrategy extends SortStrategy {
           .option(SparkReadOptions.FILE_SCAN_TASK_SET_ID, groupID)
           .load(table.name());
 
+      Dataset<Row> preProcessDF = preSort(scanDF);
+
       // write the packed data into new files where each split becomes a new file
       SQLConf sqlConf = cloneSession.sessionState().conf();
-      LogicalPlan sortPlan = sortPlan(distribution, ordering, scanDF.logicalPlan(), sqlConf);
-      Dataset<Row> sortedDf = new Dataset<>(cloneSession, sortPlan, scanDF.encoder());
+      LogicalPlan sortPlan = sortPlan(distribution, localSorting, preProcessDF.logicalPlan(), sqlConf);
+      Dataset<Row> sortedDf = new Dataset<>(cloneSession, sortPlan, preProcessDF.encoder());
 
-      sortedDf.write()
+      Dataset<Row> postProcessedDF = postSort(sortedDf);
+
+      postProcessedDF.write()
           .format("iceberg")
           .option(SparkWriteOptions.REWRITTEN_FILE_SCAN_TASK_SET_ID, groupID)
           .option(RewriteDataFiles.TARGET_FILE_SIZE_BYTES, writeMaxFileSize())
@@ -147,6 +139,18 @@ public class Spark3SortStrategy extends SortStrategy {
       rewriteCoordinator.clearRewrite(table, groupID);
     }
   }
+
+  protected Dataset<Row> preSort(Dataset<Row> scanDF) {
+    return scanDF;
+  }
+
+  protected Dataset<Row> postSort(Dataset<Row> sortedDF) {
+    return sortedDF;
+  }
+
+  protected abstract SortOrder[] localSortOrder(List<FileScanTask> filesToRewrite, Table table);
+
+  protected abstract Distribution distribution(SortOrder[] localSorting);
 
   protected SparkSession spark() {
     return this.spark;

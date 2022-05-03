@@ -138,6 +138,8 @@ abstract class SparkBatchScan implements Scan, Batch, SupportsReportStatistics {
     Broadcast<Table> tableBroadcast = sparkContext.broadcast(SerializableTable.copyOf(table));
 
     List<CombinedScanTask> scanTasks = tasks();
+    Integer totalFile = scanTasks.stream().mapToInt(t -> t.files().size()).sum();
+    LOG.info("Will scan {} files.", totalFile);
     InputPartition[] readTasks = new InputPartition[scanTasks.size()];
 
     Tasks.range(readTasks.length)
